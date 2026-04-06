@@ -13,7 +13,7 @@
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Free models on OpenRouter — change to any model you prefer
-const MODEL = process.env.OPENROUTER_MODEL || 'mistralai/mistral-7b-instruct:free';
+const MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-4-maverick:free';
 
 /**
  * Call OpenRouter's OpenAI-compatible chat endpoint.
