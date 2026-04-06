@@ -1,0 +1,38 @@
+name: Daily Tech Digest
+
+on:
+  schedule:
+    - cron: '30 23 * * *'   # 11:30 PM UTC = 5:00 AM IST
+  workflow_dispatch:          # Manual trigger for testing
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run digest & send email
+        env:
+          # OpenRouter (free) — https://openrouter.ai/keys
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Optional: override model (default: mistralai/mistral-7b-instruct:free)
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+
+          # Gmail SMTP (free) — App Password from myaccount.google.com/apppasswords
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+
+          # Recipient email
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: node src/index.js

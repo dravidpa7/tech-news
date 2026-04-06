@@ -1,0 +1,15 @@
+{
+  "name": "tech-digest",
+  "version": "1.0.0",
+  "description": "Daily tech blog digest sent to email via GitHub Actions",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node src/index.js --dry-run"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.13",
+    "rss-parser": "^3.13.0"
+  }
+}
