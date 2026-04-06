@@ -32,7 +32,7 @@ tech-digest/
 ### 1 · Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tech-digest.git
+git clone https://github.com/dravidpa7/tech-digest.git
 cd tech-digest
 npm install
 ```
