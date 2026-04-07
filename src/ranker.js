@@ -6,19 +6,26 @@
 //   2. Dashboard → Keys → Create Key
 //   3. Add OPENROUTER_API_KEY to GitHub Secrets
 //
-// Default model: mistralai/mistral-7b-instruct (free, no credit needed)
-// Other free models: meta-llama/llama-3-8b-instruct, google/gemma-3-4b-it
+// Default model: openrouter/free (auto-selects from available free models)
+// Override via OPENROUTER_MODEL secret, e.g. meta-llama/llama-4-maverick:free
 // See full free list: https://openrouter.ai/models?q=free
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Free models on OpenRouter — change to any model you prefer
+// Primary model — openrouter/free auto-picks from available free models
 const MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
+
+// Fallback chain — tried in order if the primary model returns unparseable output
+const FALLBACK_MODELS = [
+  'meta-llama/llama-4-maverick:free',
+  'deepseek/deepseek-chat-v3.1:free',
+  'qwen/qwen3-235b-a22b:free',
+];
 
 /**
  * Call OpenRouter's OpenAI-compatible chat endpoint.
  */
-async function callOpenRouter(userPrompt) {
+async function callOpenRouter(userPrompt, model = MODEL) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('Missing OPENROUTER_API_KEY environment variable.');
 
@@ -27,11 +34,11 @@ async function callOpenRouter(userPrompt) {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/tech-digest',  // shown in OR dashboard
+      'HTTP-Referer': 'https://github.com/tech-digest',
       'X-Title': 'Tech Digest',
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: 1500,
       temperature: 0.3,
       messages: [{ role: 'user', content: userPrompt }],
@@ -48,8 +55,31 @@ async function callOpenRouter(userPrompt) {
 }
 
 /**
+ * Try to extract a valid JSON array from a raw LLM response.
+ * Handles markdown fences, preamble text, and trailing content.
+ */
+function extractJsonArray(text) {
+  if (!text || !text.trim()) throw new Error('Empty response from model.');
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+
+  // Try direct parse first
+  try { return JSON.parse(stripped); } catch {}
+
+  // Find the first [...] array in the text
+  const match = stripped.match(/\[[\s\S]*\]/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch {}
+  }
+
+  throw new Error(`Unparseable response (first 500 chars):\n---\n${text.slice(0, 500)}\n---`);
+}
+
+/**
  * Given a flat list of articles, ask the LLM to pick the best 10
  * and generate a 1-2 sentence TLDR for each.
+ * Retries with fallback models if the response can't be parsed.
  *
  * @param {Array} articles  – normalised articles from fetcher
  * @returns {Promise<Array>} – top 10 with .tldr added
@@ -75,28 +105,32 @@ Task:
 2. For each chosen article return a 1-2 sentence TLDR that is factual, punchy, and jargon-light.
 3. Ensure diversity across sources — don't pick more than 3 from the same source if possible.
 
-Respond ONLY with a valid JSON array (no markdown fences, no preamble) in this exact shape:
+Respond ONLY with a valid JSON array. No markdown fences, no preamble, no explanation — just the raw JSON array.
 [
   { "id": <original id number>, "tldr": "<1-2 sentence summary>" },
   ...
 ]`;
 
-  console.log(`   🤖 Using model: ${MODEL}`);
-  const text = await callOpenRouter(prompt);
+  const modelsToTry = [MODEL, ...FALLBACK_MODELS];
+  let lastError;
 
-  let picks;
-  try {
-    picks = JSON.parse(text.trim());
-  } catch {
-    // Fallback: extract JSON array from partial/wrapped response
-    const match = text.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error('OpenRouter returned unparseable response:\n' + text);
-    picks = JSON.parse(match[0]);
+  for (const model of modelsToTry) {
+    console.log(`   🤖 Trying model: ${model}`);
+    try {
+      const text = await callOpenRouter(prompt, model);
+      const picks = extractJsonArray(text);
+      console.log(`   ✅ Got valid response from: ${model}`);
+
+      // Merge TLDR back into original article objects
+      return picks.slice(0, 10).map((pick) => ({
+        ...articles[pick.id],
+        tldr: pick.tldr,
+      }));
+    } catch (err) {
+      console.warn(`   ⚠️  Model ${model} failed: ${err.message}`);
+      lastError = err;
+    }
   }
 
-  // Merge TLDR back into original article objects
-  return picks.slice(0, 10).map((pick) => ({
-    ...articles[pick.id],
-    tldr: pick.tldr,
-  }));
+  throw new Error(`All models failed. Last error: ${lastError.message}`);
 }
